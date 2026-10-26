@@ -6,6 +6,7 @@
 
 class UInputAction;
 class UInputMappingContext;
+class URatRaceTailComponent;
 struct FInputActionValue;
 
 /**
@@ -25,12 +26,13 @@ public:
 
 protected:
 	virtual void OnPossess(APawn* InPawn) override;
+	virtual void OnUnPossess() override;
 	virtual void SetupInputComponent() override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RatRace|Input", meta = (ClampMin = "0", ClampMax = "1"))
 	float StickDeadZone = 0.2f;
 
-	/** Adds WASD + Space for the first local player (handy for debugging without a pad). */
+	/** Adds WASD + Space (+ E to grab) for the first local player (handy for debugging without a pad). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RatRace|Input")
 	bool bKeyboardForFirstPlayer = true;
 
@@ -42,12 +44,20 @@ private:
 	void HandleMove(const FInputActionValue& Value);
 	void HandleJumpStarted();
 	void HandleJumpCompleted();
+	void HandleGrabTriggered();
+	void HandleGrabCompleted();
+
+	URatRaceTailComponent* GetPawnTail() const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> MoveAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> JumpAction;
+
+	/** Hold to grab (and keep holding) another rat's tail. */
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> GrabAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> MappingContext;

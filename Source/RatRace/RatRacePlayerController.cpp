@@ -10,6 +10,7 @@
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 #include "RatRaceGameMode.h"
+#include "RatRaceTailComponent.h"
 
 ARatRacePlayerController::ARatRacePlayerController()
 {
@@ -38,6 +39,16 @@ void ARatRacePlayerController::OnPossess(APawn* InPawn)
 	ViewArenaCamera();
 }
 
+void ARatRacePlayerController::OnUnPossess()
+{
+	// Nobody could press "release" for this pawn any more.
+	if (URatRaceTailComponent* Tail = GetPawnTail())
+	{
+		Tail->Release();
+	}
+	Super::OnUnPossess();
+}
+
 void ARatRacePlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
@@ -53,6 +64,9 @@ void ARatRacePlayerController::SetupInputComponent()
 	EnhancedInput->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ARatRacePlayerController::HandleMove);
 	EnhancedInput->BindAction(JumpAction, ETriggerEvent::Started, this, &ARatRacePlayerController::HandleJumpStarted);
 	EnhancedInput->BindAction(JumpAction, ETriggerEvent::Completed, this, &ARatRacePlayerController::HandleJumpCompleted);
+	// Triggered fires every frame while held, so walking up to a tail with the button down grabs it.
+	EnhancedInput->BindAction(GrabAction, ETriggerEvent::Triggered, this, &ARatRacePlayerController::HandleGrabTriggered);
+	EnhancedInput->BindAction(GrabAction, ETriggerEvent::Completed, this, &ARatRacePlayerController::HandleGrabCompleted);
 }
 
 void ARatRacePlayerController::CreateInputActions()
@@ -67,6 +81,9 @@ void ARatRacePlayerController::CreateInputActions()
 
 	JumpAction = NewObject<UInputAction>(this, TEXT("IA_Jump"));
 	JumpAction->ValueType = EInputActionValueType::Boolean;
+
+	GrabAction = NewObject<UInputAction>(this, TEXT("IA_Grab"));
+	GrabAction->ValueType = EInputActionValueType::Boolean;
 }
 
 void ARatRacePlayerController::AddMappingContext()
@@ -98,6 +115,7 @@ void ARatRacePlayerController::AddMappingContext()
 		StickMapping.Modifiers.Add(DeadZone);
 
 		MappingContext->MapKey(JumpAction, EKeys::Gamepad_FaceButton_Bottom);
+		MappingContext->MapKey(GrabAction, EKeys::Gamepad_RightTrigger);
 
 		// Keyboard always routes to the first local player, so only map it there.
 		if (bKeyboardForFirstPlayer && LocalPlayer->GetLocalPlayerIndex() == 0)
@@ -115,6 +133,7 @@ void ARatRacePlayerController::AddMappingContext()
 			MappingContext->MapKey(MoveAction, EKeys::D);
 
 			MappingContext->MapKey(JumpAction, EKeys::SpaceBar);
+			MappingContext->MapKey(GrabAction, EKeys::E);
 		}
 	}
 
@@ -170,4 +189,27 @@ void ARatRacePlayerController::HandleJumpCompleted()
 	{
 		ControlledCharacter->StopJumping();
 	}
+}
+
+void ARatRacePlayerController::HandleGrabTriggered()
+{
+	URatRaceTailComponent* Tail = GetPawnTail();
+	if (Tail && !Tail->IsHoldingTail())
+	{
+		Tail->TryGrab();
+	}
+}
+
+void ARatRacePlayerController::HandleGrabCompleted()
+{
+	if (URatRaceTailComponent* Tail = GetPawnTail())
+	{
+		Tail->Release();
+	}
+}
+
+URatRaceTailComponent* ARatRacePlayerController::GetPawnTail() const
+{
+	const APawn* ControlledPawn = GetPawn();
+	return ControlledPawn ? ControlledPawn->FindComponentByClass<URatRaceTailComponent>() : nullptr;
 }
