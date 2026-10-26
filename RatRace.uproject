@@ -7,10 +7,17 @@
 		{
 			"Name": "RatRace",
 			"Type": "Runtime",
-			"LoadingPhase": "Default"
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine"
+			]
 		}
 	],
 	"Plugins": [
+		{
+			"Name": "EnhancedInput",
+			"Enabled": true
+		},
 		{
 			"Name": "ModelingToolsEditorMode",
 			"Enabled": true,
