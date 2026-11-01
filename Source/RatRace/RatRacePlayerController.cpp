@@ -168,6 +168,19 @@ void ARatRacePlayerController::HandleMove(const FInputActionValue& Value)
 
 void ARatRacePlayerController::HandleJumpStarted()
 {
+	if (ARatRaceGameMode* GameMode = GetWorld()->GetAuthGameMode<ARatRaceGameMode>())
+	{
+		if (GameMode->GetMatchPhase() == ERatRaceMatchPhase::MatchResults)
+		{
+			GameMode->StartNextMatch();
+			return;
+		}
+		if (GameMode->GetMatchPhase() != ERatRaceMatchPhase::Playing)
+		{
+			return;
+		}
+	}
+
 	if (ACharacter* ControlledCharacter = GetCharacter())
 	{
 		ControlledCharacter->Jump();
@@ -184,6 +197,14 @@ void ARatRacePlayerController::HandleJumpCompleted()
 
 void ARatRacePlayerController::HandleGrabTriggered()
 {
+	if (ARatRaceGameMode* GameMode = GetWorld()->GetAuthGameMode<ARatRaceGameMode>())
+	{
+		if (GameMode->GetMatchPhase() != ERatRaceMatchPhase::Playing)
+		{
+			return;
+		}
+	}
+
 	if (ARatRaceCharacter* Rat = Cast<ARatRaceCharacter>(GetPawn()))
 	{
 		if (URatRaceTailComponent* Tail = Rat->GetTail())

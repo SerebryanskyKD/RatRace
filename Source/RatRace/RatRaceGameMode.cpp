@@ -7,6 +7,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Framework/Application/SlateApplication.h"
+#include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GenericPlatform/GenericPlatformInputDeviceMapper.h"
 #include "Kismet/GameplayStatics.h"
@@ -14,6 +15,30 @@
 #include "RatRaceCharacter.h"
 #include "RatRaceGamepadRouter.h"
 #include "RatRacePlayerController.h"
+#include "RatRaceTailComponent.h"
+
+namespace
+{
+	constexpr int32 MatchStatusMessageKey = 0x524154;
+	constexpr float CapsuleFallbackHalfHeight = 90.f;
+
+	const TCHAR* GetPhaseLabel(ERatRaceMatchPhase Phase)
+	{
+		switch (Phase)
+		{
+		case ERatRaceMatchPhase::Countdown:
+			return TEXT("Starting in");
+		case ERatRaceMatchPhase::Playing:
+			return TEXT("Time");
+		case ERatRaceMatchPhase::RoundResults:
+			return TEXT("Round complete");
+		case ERatRaceMatchPhase::MatchResults:
+			return TEXT("Match complete");
+		default:
+			return TEXT("");
+		}
+	}
+}
 
 ARatRaceGameMode::ARatRaceGameMode()
 {
@@ -75,10 +100,15 @@ void ARatRaceGameMode::BeginPlay()
 		GamepadRouter = MakeShared<FRatRaceGamepadRouter>(World->GetGameViewport(), bShowGamepadAssignment);
 		FSlateApplication::Get().RegisterInputPreProcessor(GamepadRouter);
 	}
+
+	World->GetTimerManager().SetTimerForNextTick(
+		FTimerDelegate::CreateUObject(this, &ARatRaceGameMode::StartMatch));
 }
 
 void ARatRaceGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearTimer(PhaseTimerHandle);
+	GetWorldTimerManager().ClearTimer(RoundTimerHandle);
 	IPlatformInputDeviceMapper::Get().GetOnInputDeviceConnectionChange().Remove(DeviceConnectionHandle);
 	if (GamepadRouter.IsValid() && FSlateApplication::IsInitialized())
 	{
@@ -145,6 +175,40 @@ void ARatRaceGameMode::Tick(float DeltaSeconds)
 		AssignGamepadsToPlayers();
 	}
 
+	if (bShowMatchStatus && GEngine)
+	{
+		const float Remaining = GetPhaseTimeRemaining();
+		const int32 Seconds = FMath::Max(0, FMath::CeilToInt(Remaining));
+		FString Status;
+
+		switch (MatchPhase)
+		{
+		case ERatRaceMatchPhase::Countdown:
+		case ERatRaceMatchPhase::Playing:
+			Status = FString::Printf(
+				TEXT("Round %d / %d\n%s: %d"),
+				CurrentRound,
+				FMath::Max(1, NumRounds),
+				GetPhaseLabel(MatchPhase),
+				Seconds);
+			break;
+		case ERatRaceMatchPhase::RoundResults:
+			Status = FString::Printf(
+				TEXT("Round %d / %d\n%s"),
+				CurrentRound,
+				FMath::Max(1, NumRounds),
+				GetPhaseLabel(MatchPhase));
+			break;
+		case ERatRaceMatchPhase::MatchResults:
+			Status = TEXT("Match complete\nPress A or Space to play again");
+			break;
+		default:
+			break;
+		}
+
+		GEngine->AddOnScreenDebugMessage(MatchStatusMessageKey, 1.1f, FColor::White, Status, true);
+	}
+
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
 		APlayerController* PC = It->Get();
@@ -192,6 +256,157 @@ ACameraActor* ARatRaceGameMode::GetArenaCamera()
 	return Builder ? Builder->GetArenaCamera() : nullptr;
 }
 
+void ARatRaceGameMode::StartMatch()
+{
+	GetWorldTimerManager().ClearTimer(PhaseTimerHandle);
+	GetWorldTimerManager().ClearTimer(RoundTimerHandle);
+	CurrentRound = 1;
+	StartRoundCountdown();
+}
+
+void ARatRaceGameMode::StartRoundCountdown()
+{
+	MatchPhase = ERatRaceMatchPhase::Countdown;
+	SetPlayersCanMove(false);
+	ResetPlayersForRound();
+
+	if (CountdownDuration <= 0.f)
+	{
+		StartRound();
+		return;
+	}
+
+	GetWorldTimerManager().SetTimer(
+		PhaseTimerHandle,
+		this,
+		&ARatRaceGameMode::StartRound,
+		CountdownDuration,
+		false);
+}
+
+void ARatRaceGameMode::StartRound()
+{
+	if (MatchPhase != ERatRaceMatchPhase::Countdown)
+	{
+		return;
+	}
+
+	MatchPhase = ERatRaceMatchPhase::Playing;
+	SetPlayersCanMove(true);
+	GetWorldTimerManager().SetTimer(
+		RoundTimerHandle,
+		this,
+		&ARatRaceGameMode::FinishCurrentRound,
+		RoundDuration,
+		false);
+}
+
+void ARatRaceGameMode::FinishCurrentRound()
+{
+	if (MatchPhase != ERatRaceMatchPhase::Playing)
+	{
+		return;
+	}
+
+	GetWorldTimerManager().ClearTimer(RoundTimerHandle);
+	MatchPhase = ERatRaceMatchPhase::RoundResults;
+	SetPlayersCanMove(false);
+
+	if (ResultsDuration <= 0.f)
+	{
+		ContinueAfterRoundResults();
+		return;
+	}
+
+	GetWorldTimerManager().SetTimer(
+		PhaseTimerHandle,
+		this,
+		&ARatRaceGameMode::ContinueAfterRoundResults,
+		ResultsDuration,
+		false);
+}
+
+void ARatRaceGameMode::ContinueAfterRoundResults()
+{
+	if (MatchPhase != ERatRaceMatchPhase::RoundResults)
+	{
+		return;
+	}
+
+	if (CurrentRound < FMath::Max(1, NumRounds))
+	{
+		++CurrentRound;
+		StartRoundCountdown();
+		return;
+	}
+
+	MatchPhase = ERatRaceMatchPhase::MatchResults;
+	SetPlayersCanMove(false);
+}
+
+bool ARatRaceGameMode::StartNextMatch()
+{
+	if (MatchPhase != ERatRaceMatchPhase::MatchResults)
+	{
+		return false;
+	}
+
+	StartMatch();
+	return true;
+}
+
+float ARatRaceGameMode::GetPhaseTimeRemaining() const
+{
+	const FTimerHandle& ActiveTimer = MatchPhase == ERatRaceMatchPhase::Playing
+		? RoundTimerHandle
+		: PhaseTimerHandle;
+	return FMath::Max(0.f, GetWorldTimerManager().GetTimerRemaining(ActiveTimer));
+}
+
+void ARatRaceGameMode::SetPlayersCanMove(bool bCanMove)
+{
+	const bool bShouldLockMovement = !bCanMove;
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		if (APlayerController* PC = It->Get())
+		{
+			PC->SetIgnoreMoveInput(bShouldLockMovement);
+			if (bShouldLockMovement)
+			{
+				if (ARatRaceCharacter* Rat = Cast<ARatRaceCharacter>(PC->GetPawn()))
+				{
+					if (URatRaceTailComponent* Tail = Rat->GetTail())
+					{
+						Tail->Release();
+					}
+				}
+			}
+		}
+	}
+}
+
+void ARatRaceGameMode::ResetPlayersForRound()
+{
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* PC = It->Get();
+		APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+		if (!Pawn)
+		{
+			continue;
+		}
+
+		if (ACharacter* Character = Cast<ACharacter>(Pawn))
+		{
+			Character->StopJumping();
+			Character->GetCharacterMovement()->StopMovementImmediately();
+		}
+
+		const FTransform Spawn = GetSpawnTransform(GetPlayerIndex(PC));
+		Pawn->TeleportTo(Spawn.GetLocation(), Spawn.Rotator(), false, true);
+	}
+}
+
 ARatRaceArenaBuilder* ARatRaceGameMode::EnsureArena()
 {
 	if (Arena)
@@ -234,7 +449,7 @@ FTransform ARatRaceGameMode::GetSpawnTransform(int32 PlayerIndex) const
 	FVector Location = SpawnPoints.Num() > 0 ? SpawnPoints[PlayerIndex % SpawnPoints.Num()] : FVector::ZeroVector;
 
 	// Spawn points are at foot level; lift by the capsule so the pawn doesn't start inside the floor.
-	float HalfHeight = 90.f;
+	float HalfHeight = CapsuleFallbackHalfHeight;
 	if (const ACharacter* PawnCDO = Cast<ACharacter>(DefaultPawnClass.GetDefaultObject()))
 	{
 		HalfHeight = PawnCDO->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
