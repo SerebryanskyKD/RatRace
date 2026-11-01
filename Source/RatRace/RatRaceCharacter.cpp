@@ -6,6 +6,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "RatRaceTailComponent.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace RatRaceCharacter
@@ -48,6 +49,17 @@ ARatRaceCharacter::ARatRaceCharacter()
 	NoseMesh->SetRelativeScale3D(FVector(0.25f));
 	NoseMesh->SetRelativeLocation(FVector(CapsuleRadius + 5.f, 0.f, CapsuleHalfHeight * 0.5f));
 
+	TailMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TailMesh"));
+	TailMesh->SetupAttachment(GetCapsuleComponent());
+	TailMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	TailMesh->SetRelativeScale3D(FVector(0.16f, 0.16f, 1.15f));
+	TailMesh->SetRelativeRotation(FRotator(0.f, 90.f, 0.f));
+	TailMesh->SetRelativeLocation(FVector(-87.f, 0.f, -58.f));
+
+	Tail = CreateDefaultSubobject<URatRaceTailComponent>(TEXT("Tail"));
+	Tail->SetupAttachment(GetCapsuleComponent());
+	Tail->SetRelativeLocation(FVector(-145.f, 0.f, -75.f));
+
 	if (CylinderMesh.Succeeded())
 	{
 		BodyMesh->SetStaticMesh(CylinderMesh.Object);
@@ -56,10 +68,15 @@ ARatRaceCharacter::ARatRaceCharacter()
 	{
 		NoseMesh->SetStaticMesh(CubeMesh.Object);
 	}
+	if (CylinderMesh.Succeeded())
+	{
+		TailMesh->SetStaticMesh(CylinderMesh.Object);
+	}
 	if (ShapeMaterial.Succeeded())
 	{
 		BodyMesh->SetMaterial(0, ShapeMaterial.Object);
 		NoseMesh->SetMaterial(0, ShapeMaterial.Object);
+		TailMesh->SetMaterial(0, ShapeMaterial.Object);
 	}
 
 	ApplyMovementSettings();
@@ -74,6 +91,7 @@ void ARatRaceCharacter::PostInitializeComponents()
 
 	BodyMaterial = BodyMesh->CreateDynamicMaterialInstance(0);
 	NoseMaterial = NoseMesh->CreateDynamicMaterialInstance(0);
+	TailMesh->SetMaterial(0, BodyMaterial);
 	if (NoseMaterial)
 	{
 		NoseMaterial->SetVectorParameterValue(RatRaceCharacter::ColorParam, NoseColor);

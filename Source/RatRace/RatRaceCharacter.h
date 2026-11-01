@@ -6,6 +6,7 @@
 
 class UStaticMeshComponent;
 class UMaterialInstanceDynamic;
+class URatRaceTailComponent;
 
 /** Cylinder-shaped player pawn. No camera: everyone looks through the shared arena camera. */
 UCLASS()
@@ -24,6 +25,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "RatRace")
 	FLinearColor GetPlayerColor() const { return PlayerColor; }
 
+	UFUNCTION(BlueprintPure, Category = "RatRace|Tail")
+	URatRaceTailComponent* GetTail() const { return Tail; }
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> BodyMesh;
@@ -31,6 +35,12 @@ protected:
 	/** Small cube in front of the body so the facing direction is readable from above. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> NoseMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> TailMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<URatRaceTailComponent> Tail;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RatRace|Appearance")
 	FLinearColor PlayerColor = FLinearColor::White;

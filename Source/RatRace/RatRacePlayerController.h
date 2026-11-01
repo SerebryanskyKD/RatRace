@@ -6,6 +6,7 @@
 
 class UInputAction;
 class UInputMappingContext;
+class ARatRaceCharacter;
 struct FInputActionValue;
 
 /**
@@ -25,6 +26,7 @@ public:
 
 protected:
 	virtual void OnPossess(APawn* InPawn) override;
+	virtual void OnUnPossess() override;
 	virtual void SetupInputComponent() override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RatRace|Input", meta = (ClampMin = "0", ClampMax = "1"))
@@ -42,6 +44,8 @@ private:
 	void HandleMove(const FInputActionValue& Value);
 	void HandleJumpStarted();
 	void HandleJumpCompleted();
+	void HandleGrabTriggered();
+	void HandleGrabCompleted();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> MoveAction;
@@ -50,5 +54,10 @@ private:
 	TObjectPtr<UInputAction> JumpAction;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> GrabAction;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> MappingContext;
+
+	TWeakObjectPtr<ARatRaceCharacter> ControlledRat;
 };

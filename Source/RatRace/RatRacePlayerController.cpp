@@ -10,6 +10,8 @@
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 #include "RatRaceGameMode.h"
+#include "RatRaceCharacter.h"
+#include "RatRaceTailComponent.h"
 
 ARatRacePlayerController::ARatRacePlayerController()
 {
@@ -35,6 +37,7 @@ void ARatRacePlayerController::ReceivedPlayer()
 void ARatRacePlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
+	ControlledRat = Cast<ARatRaceCharacter>(InPawn);
 	ViewArenaCamera();
 }
 
@@ -53,6 +56,8 @@ void ARatRacePlayerController::SetupInputComponent()
 	EnhancedInput->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ARatRacePlayerController::HandleMove);
 	EnhancedInput->BindAction(JumpAction, ETriggerEvent::Started, this, &ARatRacePlayerController::HandleJumpStarted);
 	EnhancedInput->BindAction(JumpAction, ETriggerEvent::Completed, this, &ARatRacePlayerController::HandleJumpCompleted);
+	EnhancedInput->BindAction(GrabAction, ETriggerEvent::Triggered, this, &ARatRacePlayerController::HandleGrabTriggered);
+	EnhancedInput->BindAction(GrabAction, ETriggerEvent::Completed, this, &ARatRacePlayerController::HandleGrabCompleted);
 }
 
 void ARatRacePlayerController::CreateInputActions()
@@ -67,6 +72,9 @@ void ARatRacePlayerController::CreateInputActions()
 
 	JumpAction = NewObject<UInputAction>(this, TEXT("IA_Jump"));
 	JumpAction->ValueType = EInputActionValueType::Boolean;
+
+	GrabAction = NewObject<UInputAction>(this, TEXT("IA_Grab"));
+	GrabAction->ValueType = EInputActionValueType::Boolean;
 }
 
 void ARatRacePlayerController::AddMappingContext()
@@ -98,6 +106,7 @@ void ARatRacePlayerController::AddMappingContext()
 		StickMapping.Modifiers.Add(DeadZone);
 
 		MappingContext->MapKey(JumpAction, EKeys::Gamepad_FaceButton_Bottom);
+		MappingContext->MapKey(GrabAction, EKeys::Gamepad_RightTrigger);
 
 		// Keyboard always routes to the first local player, so only map it there.
 		if (bKeyboardForFirstPlayer && LocalPlayer->GetLocalPlayerIndex() == 0)
@@ -115,6 +124,7 @@ void ARatRacePlayerController::AddMappingContext()
 			MappingContext->MapKey(MoveAction, EKeys::D);
 
 			MappingContext->MapKey(JumpAction, EKeys::SpaceBar);
+			MappingContext->MapKey(GrabAction, EKeys::E);
 		}
 	}
 
@@ -170,4 +180,40 @@ void ARatRacePlayerController::HandleJumpCompleted()
 	{
 		ControlledCharacter->StopJumping();
 	}
+}
+
+void ARatRacePlayerController::HandleGrabTriggered()
+{
+	if (ARatRaceCharacter* Rat = Cast<ARatRaceCharacter>(GetPawn()))
+	{
+		if (URatRaceTailComponent* Tail = Rat->GetTail())
+		{
+			Tail->TryGrab();
+		}
+	}
+}
+
+void ARatRacePlayerController::HandleGrabCompleted()
+{
+	if (ARatRaceCharacter* Rat = Cast<ARatRaceCharacter>(GetPawn()))
+	{
+		if (URatRaceTailComponent* Tail = Rat->GetTail())
+		{
+			Tail->Release();
+		}
+	}
+}
+
+void ARatRacePlayerController::OnUnPossess()
+{
+	if (ARatRaceCharacter* Rat = ControlledRat.Get())
+	{
+		if (URatRaceTailComponent* Tail = Rat->GetTail())
+		{
+			Tail->Release();
+		}
+	}
+
+	ControlledRat.Reset();
+	Super::OnUnPossess();
 }
