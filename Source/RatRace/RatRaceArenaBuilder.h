@@ -44,6 +44,8 @@ public:
 	void BuildArena();
 
 	ACameraActor* GetArenaCamera() const { return ArenaCamera; }
+	FVector GetFloorSize() const { return FloorSize; }
+	float GetMaxSurfaceHeight() const;
 
 protected:
 	/** X = depth (away from camera), Y = width, Z = thickness. */

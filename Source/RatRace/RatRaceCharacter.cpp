@@ -53,7 +53,7 @@ ARatRaceCharacter::ARatRaceCharacter()
 	TailMesh->SetupAttachment(GetCapsuleComponent());
 	TailMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	TailMesh->SetRelativeScale3D(FVector(0.16f, 0.16f, 1.15f));
-	TailMesh->SetRelativeRotation(FRotator(0.f, 90.f, 0.f));
+	TailMesh->SetRelativeRotation(FRotator(-90.f, 0.f, 0.f));
 	TailMesh->SetRelativeLocation(FVector(-87.f, 0.f, -58.f));
 
 	Tail = CreateDefaultSubobject<URatRaceTailComponent>(TEXT("Tail"));

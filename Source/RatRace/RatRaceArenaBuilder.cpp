@@ -94,6 +94,17 @@ void ARatRaceArenaBuilder::BuildArena()
 	}
 }
 
+float ARatRaceArenaBuilder::GetMaxSurfaceHeight() const
+{
+	float MaxHeight = 0.f;
+	for (const FRatRacePlatform& Platform : Platforms)
+	{
+		MaxHeight = FMath::Max(MaxHeight, Platform.Center.Z + Platform.Size.Z * 0.5f);
+	}
+
+	return GetActorTransform().TransformPosition(FVector(0.f, 0.f, MaxHeight)).Z;
+}
+
 UStaticMeshComponent* ARatRaceArenaBuilder::AddBox(const FName Name, const FVector& Center, const FVector& Size, const FLinearColor& Color)
 {
 	UStaticMeshComponent* Box = NewObject<UStaticMeshComponent>(this, Name);

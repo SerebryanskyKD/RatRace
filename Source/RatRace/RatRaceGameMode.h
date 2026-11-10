@@ -6,6 +6,7 @@
 
 class ACameraActor;
 class ARatRaceArenaBuilder;
+class ARatRaceCatPawsHazard;
 
 UENUM(BlueprintType)
 enum class ERatRaceMatchPhase : uint8
@@ -35,6 +36,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "RatRace|Match")
 	void FinishCurrentRound();
+
+	void EliminatePlayerForRound(AController* Controller);
+	bool IsPlayerEliminated(AController* Controller) const;
 
 	UFUNCTION(BlueprintCallable, Category = "RatRace|Match")
 	bool StartNextMatch();
@@ -99,9 +103,17 @@ private:
 	void ContinueAfterRoundResults();
 	void SetPlayersCanMove(bool bCanMove);
 	void ResetPlayersForRound();
+	bool StartCatPawsHazards();
+	void StopCatPawsHazards();
+	int32 GetAlivePlayerCount() const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<ARatRaceArenaBuilder> Arena;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ARatRaceCatPawsHazard> CatPawsHazard;
+
+	TSet<TWeakObjectPtr<AController>> EliminatedPlayers;
 
 	ERatRaceMatchPhase MatchPhase = ERatRaceMatchPhase::Countdown;
 
@@ -109,6 +121,8 @@ private:
 
 	FTimerHandle PhaseTimerHandle;
 	FTimerHandle RoundTimerHandle;
+
+	bool bMatchMovementLockApplied = false;
 
 	FDelegateHandle DeviceConnectionHandle;
 	TSharedPtr<class FRatRaceGamepadRouter> GamepadRouter;

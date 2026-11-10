@@ -12,6 +12,7 @@
 #include "GenericPlatform/GenericPlatformInputDeviceMapper.h"
 #include "Kismet/GameplayStatics.h"
 #include "RatRaceArenaBuilder.h"
+#include "RatRaceCatPawsHazard.h"
 #include "RatRaceCharacter.h"
 #include "RatRaceGamepadRouter.h"
 #include "RatRacePlayerController.h"
@@ -107,6 +108,7 @@ void ARatRaceGameMode::BeginPlay()
 
 void ARatRaceGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	StopCatPawsHazards();
 	GetWorldTimerManager().ClearTimer(PhaseTimerHandle);
 	GetWorldTimerManager().ClearTimer(RoundTimerHandle);
 	IPlatformInputDeviceMapper::Get().GetOnInputDeviceConnectionChange().Remove(DeviceConnectionHandle);
@@ -213,7 +215,7 @@ void ARatRaceGameMode::Tick(float DeltaSeconds)
 	{
 		APlayerController* PC = It->Get();
 		APawn* Pawn = PC ? PC->GetPawn() : nullptr;
-		if (!Pawn || Pawn->GetActorLocation().Z >= RespawnZ)
+		if (!Pawn || IsPlayerEliminated(PC) || Pawn->GetActorLocation().Z >= RespawnZ)
 		{
 			continue;
 		}
@@ -293,6 +295,12 @@ void ARatRaceGameMode::StartRound()
 
 	MatchPhase = ERatRaceMatchPhase::Playing;
 	SetPlayersCanMove(true);
+	if (!StartCatPawsHazards())
+	{
+		FinishCurrentRound();
+		return;
+	}
+
 	GetWorldTimerManager().SetTimer(
 		RoundTimerHandle,
 		this,
@@ -309,6 +317,7 @@ void ARatRaceGameMode::FinishCurrentRound()
 	}
 
 	GetWorldTimerManager().ClearTimer(RoundTimerHandle);
+	StopCatPawsHazards();
 	MatchPhase = ERatRaceMatchPhase::RoundResults;
 	SetPlayersCanMove(false);
 
@@ -355,6 +364,58 @@ bool ARatRaceGameMode::StartNextMatch()
 	return true;
 }
 
+void ARatRaceGameMode::EliminatePlayerForRound(AController* Controller)
+{
+	if (MatchPhase != ERatRaceMatchPhase::Playing || !Controller || IsPlayerEliminated(Controller))
+	{
+		return;
+	}
+
+	APawn* Pawn = Controller->GetPawn();
+	if (!Pawn)
+	{
+		return;
+	}
+
+	EliminatedPlayers.Add(TWeakObjectPtr<AController>(Controller));
+	Pawn->SetActorEnableCollision(false);
+	Pawn->SetActorHiddenInGame(true);
+
+	if (ACharacter* Character = Cast<ACharacter>(Pawn))
+	{
+		Character->StopJumping();
+		if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
+		{
+			Movement->StopMovementImmediately();
+			Movement->DisableMovement();
+		}
+	}
+
+	if (GetAlivePlayerCount() <= 1)
+	{
+		FinishCurrentRound();
+	}
+}
+
+bool ARatRaceGameMode::IsPlayerEliminated(AController* Controller) const
+{
+	return Controller && EliminatedPlayers.Contains(TWeakObjectPtr<AController>(Controller));
+}
+
+int32 ARatRaceGameMode::GetAlivePlayerCount() const
+{
+	int32 AliveCount = 0;
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* PC = It->Get();
+		if (PC && PC->GetPawn() && !IsPlayerEliminated(PC))
+		{
+			++AliveCount;
+		}
+	}
+	return AliveCount;
+}
+
 float ARatRaceGameMode::GetPhaseTimeRemaining() const
 {
 	const FTimerHandle& ActiveTimer = MatchPhase == ERatRaceMatchPhase::Playing
@@ -366,6 +427,12 @@ float ARatRaceGameMode::GetPhaseTimeRemaining() const
 void ARatRaceGameMode::SetPlayersCanMove(bool bCanMove)
 {
 	const bool bShouldLockMovement = !bCanMove;
+	if (bMatchMovementLockApplied == bShouldLockMovement)
+	{
+		return;
+	}
+
+	bMatchMovementLockApplied = bShouldLockMovement;
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
 		if (APlayerController* PC = It->Get())
@@ -387,6 +454,8 @@ void ARatRaceGameMode::SetPlayersCanMove(bool bCanMove)
 
 void ARatRaceGameMode::ResetPlayersForRound()
 {
+	EliminatedPlayers.Reset();
+
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
 		APlayerController* PC = It->Get();
@@ -396,14 +465,61 @@ void ARatRaceGameMode::ResetPlayersForRound()
 			continue;
 		}
 
+		Pawn->SetActorHiddenInGame(false);
+		Pawn->SetActorEnableCollision(true);
 		if (ACharacter* Character = Cast<ACharacter>(Pawn))
 		{
 			Character->StopJumping();
-			Character->GetCharacterMovement()->StopMovementImmediately();
+			if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
+			{
+				Movement->SetMovementMode(MOVE_Walking);
+				Movement->StopMovementImmediately();
+			}
 		}
 
 		const FTransform Spawn = GetSpawnTransform(GetPlayerIndex(PC));
 		Pawn->TeleportTo(Spawn.GetLocation(), Spawn.Rotator(), false, true);
+	}
+}
+
+bool ARatRaceGameMode::StartCatPawsHazards()
+{
+	StopCatPawsHazards();
+
+	ARatRaceArenaBuilder* ArenaBuilder = EnsureArena();
+	if (!ArenaBuilder)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Cat Paws: arena builder is unavailable."));
+		return false;
+	}
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	CatPawsHazard = GetWorld()->SpawnActor<ARatRaceCatPawsHazard>(
+		ARatRaceCatPawsHazard::StaticClass(),
+		FTransform::Identity,
+		Params);
+
+	if (!CatPawsHazard || !CatPawsHazard->StartHazards(
+		ArenaBuilder->GetActorLocation(),
+		ArenaBuilder->GetFloorSize(),
+		ArenaBuilder->GetMaxSurfaceHeight()))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Cat Paws: failed to start hazard actor."));
+		StopCatPawsHazards();
+		return false;
+	}
+
+	return true;
+}
+
+void ARatRaceGameMode::StopCatPawsHazards()
+{
+	if (CatPawsHazard)
+	{
+		CatPawsHazard->StopHazards();
+		CatPawsHazard->Destroy();
+		CatPawsHazard = nullptr;
 	}
 }
 
