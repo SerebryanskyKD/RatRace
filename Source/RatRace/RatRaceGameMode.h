@@ -52,6 +52,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "RatRace|Match")
 	float GetPhaseTimeRemaining() const;
 
+	UFUNCTION(BlueprintPure, Category = "RatRace|Match")
+	int32 GetPlayerScore(int32 PlayerIndex) const;
+
+	UFUNCTION(BlueprintPure, Category = "RatRace|Match")
+	TArray<int32> GetMatchWinnerPlayerIndices() const;
+
+	UFUNCTION(BlueprintPure, Category = "RatRace|Match")
+	int32 GetAlivePlayerCount() const;
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RatRace", meta = (ClampMin = "2", ClampMax = "4"))
 	int32 NumLocalPlayers = 4;
@@ -105,7 +114,7 @@ private:
 	void ResetPlayersForRound();
 	bool StartCatPawsHazards();
 	void StopCatPawsHazards();
-	int32 GetAlivePlayerCount() const;
+	void AwardRoundPoints();
 
 	UPROPERTY(Transient)
 	TObjectPtr<ARatRaceArenaBuilder> Arena;
@@ -114,6 +123,8 @@ private:
 	TObjectPtr<ARatRaceCatPawsHazard> CatPawsHazard;
 
 	TSet<TWeakObjectPtr<AController>> EliminatedPlayers;
+
+	TArray<int32> PlayerScores;
 
 	ERatRaceMatchPhase MatchPhase = ERatRaceMatchPhase::Countdown;
 

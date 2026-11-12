@@ -39,6 +39,43 @@ namespace
 			return TEXT("");
 		}
 	}
+
+	FString GetScoreSummary(const ARatRaceGameMode& GameMode, int32 PlayerCount)
+	{
+		FString Summary(TEXT("Score: "));
+		for (int32 PlayerIndex = 0; PlayerIndex < PlayerCount; ++PlayerIndex)
+		{
+			if (PlayerIndex > 0)
+			{
+				Summary += TEXT(" | ");
+			}
+			Summary += FString::Printf(
+				TEXT("P%d %d"),
+				PlayerIndex + 1,
+				GameMode.GetPlayerScore(PlayerIndex));
+		}
+		return Summary;
+	}
+
+	FString GetMatchWinnerSummary(const ARatRaceGameMode& GameMode)
+	{
+		const TArray<int32> Winners = GameMode.GetMatchWinnerPlayerIndices();
+		if (Winners.IsEmpty())
+		{
+			return TEXT("No winner");
+		}
+
+		TArray<FString> WinnerNames;
+		WinnerNames.Reserve(Winners.Num());
+		for (const int32 PlayerIndex : Winners)
+		{
+			WinnerNames.Add(FString::Printf(TEXT("Player %d"), PlayerIndex + 1));
+		}
+
+		return Winners.Num() == 1
+			? FString::Printf(TEXT("%s wins"), *WinnerNames[0])
+			: FString::Printf(TEXT("%s tie"), *FString::Join(WinnerNames, TEXT(" and ")));
+	}
 }
 
 ARatRaceGameMode::ARatRaceGameMode()
@@ -196,13 +233,17 @@ void ARatRaceGameMode::Tick(float DeltaSeconds)
 			break;
 		case ERatRaceMatchPhase::RoundResults:
 			Status = FString::Printf(
-				TEXT("Round %d / %d\n%s"),
+				TEXT("Round %d / %d\n%s\n%s"),
 				CurrentRound,
 				FMath::Max(1, NumRounds),
-				GetPhaseLabel(MatchPhase));
+				GetPhaseLabel(MatchPhase),
+				*GetScoreSummary(*this, FMath::Clamp(NumLocalPlayers, 2, 4)));
 			break;
 		case ERatRaceMatchPhase::MatchResults:
-			Status = TEXT("Match complete\nPress A or Space to play again");
+			Status = FString::Printf(
+				TEXT("Match complete\n%s\n%s\nPress A or Space to play again"),
+				*GetMatchWinnerSummary(*this),
+				*GetScoreSummary(*this, FMath::Clamp(NumLocalPlayers, 2, 4)));
 			break;
 		default:
 			break;
@@ -262,6 +303,7 @@ void ARatRaceGameMode::StartMatch()
 {
 	GetWorldTimerManager().ClearTimer(PhaseTimerHandle);
 	GetWorldTimerManager().ClearTimer(RoundTimerHandle);
+	PlayerScores.Init(0, FMath::Clamp(NumLocalPlayers, 2, 4));
 	CurrentRound = 1;
 	StartRoundCountdown();
 }
@@ -318,6 +360,7 @@ void ARatRaceGameMode::FinishCurrentRound()
 
 	GetWorldTimerManager().ClearTimer(RoundTimerHandle);
 	StopCatPawsHazards();
+	AwardRoundPoints();
 	MatchPhase = ERatRaceMatchPhase::RoundResults;
 	SetPlayersCanMove(false);
 
@@ -414,6 +457,58 @@ int32 ARatRaceGameMode::GetAlivePlayerCount() const
 		}
 	}
 	return AliveCount;
+}
+
+int32 ARatRaceGameMode::GetPlayerScore(int32 PlayerIndex) const
+{
+	return PlayerScores.IsValidIndex(PlayerIndex) ? PlayerScores[PlayerIndex] : 0;
+}
+
+TArray<int32> ARatRaceGameMode::GetMatchWinnerPlayerIndices() const
+{
+	TArray<int32> Winners;
+	if (PlayerScores.IsEmpty())
+	{
+		return Winners;
+	}
+
+	int32 HighestScore = 0;
+	for (const int32 Score : PlayerScores)
+	{
+		HighestScore = FMath::Max(HighestScore, Score);
+	}
+	if (HighestScore <= 0)
+	{
+		return Winners;
+	}
+
+	for (int32 PlayerIndex = 0; PlayerIndex < PlayerScores.Num(); ++PlayerIndex)
+	{
+		if (PlayerScores[PlayerIndex] == HighestScore)
+		{
+			Winners.Add(PlayerIndex);
+		}
+	}
+	return Winners;
+}
+
+void ARatRaceGameMode::AwardRoundPoints()
+{
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* PC = It->Get();
+		if (!PC || !PC->GetPawn() || IsPlayerEliminated(PC))
+		{
+			continue;
+		}
+
+		const int32 PlayerIndex = GetPlayerIndex(PC);
+		if (PlayerIndex >= PlayerScores.Num())
+		{
+			PlayerScores.SetNum(PlayerIndex + 1);
+		}
+		++PlayerScores[PlayerIndex];
+	}
 }
 
 float ARatRaceGameMode::GetPhaseTimeRemaining() const
