@@ -49,3 +49,9 @@ Build/*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ====================================
+# Прочее
+# ====================================
+Plugins/Monolith/
+AGENTS.md
